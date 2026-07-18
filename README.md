@@ -76,13 +76,26 @@ realtime_networking=operational
 
 Unknown source values are not treated as operational.
 
-## Update behavior
+## Status update workflow
 
-GitHub Actions is scheduled to retrieve and publish the status data
-approximately every 10 minutes.
+The `Update VRChat status` workflow performs the following operations:
+
+1. Retrieves the official VRChat Status summary.
+2. Validates the response structure, page identity, component IDs, and names.
+3. Rejects unknown source status values.
+4. Generates `public/vrc-status.txt`.
+5. Validates the generated file.
+6. Uploads the `public` directory as a GitHub Pages artifact.
+7. Deploys the artifact to GitHub Pages.
+
+A new deployment is performed only when all required validation succeeds.
+
+The workflow is configured with multiple explicit cron schedules intended to
+run approximately every 10 minutes.
 
 Scheduled workflow start times are not guaranteed. GitHub Actions may delay or
-skip scheduled runs during periods of high load.
+skip scheduled runs during periods of high load. The cron configuration may be
+adjusted based on observed scheduling behavior.
 
 The workflow can also be started manually from:
 
@@ -92,22 +105,54 @@ Actions → Update VRChat status → Run workflow
 
 ## Failure behavior
 
-A new deployment is performed only when all required source data passes
-validation.
-
 If retrieval or validation fails:
 
-- The workflow fails.
+- The generation job fails.
+- The deployment job is skipped.
 - No new Pages deployment is performed.
 - The last successfully published file remains available.
 - Clients should use `generated_at` to detect stale data.
+
+This behavior has been tested using a temporary branch with an intentionally
+invalid source URL.
+
+## Scheduled workflow keepalive
+
+GitHub may disable scheduled workflows in inactive public repositories.
+
+The `Keep scheduled workflows active` workflow periodically updates:
+
+```text
+.github/keepalive
+```
+
+The keepalive workflow:
+
+- Runs on the 1st and 21st of each month.
+- Can also be started manually.
+- Writes the current UTC date to `.github/keepalive`.
+- Creates a commit only when the file content changes.
+- Uses the `github-actions[bot]` commit identity.
+- Does not require a Personal Access Token or repository secret.
+
+The keepalive workflow is a maintenance safeguard, but scheduled workflow
+activity should still be reviewed periodically.
+
+## GitHub Pages protection
+
+The `github-pages` environment permits deployments from the `main` branch
+only.
+
+Test branches cannot deploy to the production GitHub Pages environment.
 
 ## Repository structure
 
 ```text
 .github/
   workflows/
+    keepalive.yml
     update-vrc-status.yml
+  keepalive
 
 public/
   index.html
@@ -118,19 +163,44 @@ scripts/
 README.md
 ```
 
-`public/vrc-status.txt` is generated during the workflow and is not committed
-to the repository.
+`public/vrc-status.txt` is generated during the status workflow and is not
+committed to the repository.
 
-## Maintenance notes
+## Client behavior
 
-Scheduled workflows in public repositories may be disabled by GitHub after
-60 days without repository activity.
+Clients should:
 
-Review the Actions page periodically and confirm that scheduled runs continue
-to occur.
+- Require `version=1`.
+- Require all documented keys.
+- Reject duplicate or malformed keys.
+- Accept only the documented normalized status values.
+- Treat unsupported versions and invalid data as unknown.
+- Use `generated_at` to detect stale data.
+- Avoid assuming that scheduled updates occur at exact times.
 
-The exact timing of scheduled runs is not guaranteed. The cron configuration
-may be adjusted based on observed GitHub Actions scheduling behavior.
+## VRChat compatibility
+
+The published status URL has been tested successfully with
+`VRCStringDownloader` in:
+
+- Unity Play Mode
+- VRChat Build & Test
+
+The same URL can be downloaded again in an existing VRChat instance after a
+new GitHub Pages deployment.
+
+## Manual checks
+
+Periodically confirm that:
+
+1. Scheduled status workflows are still running.
+2. The generated file contains all required keys.
+3. `generated_at` continues to advance.
+4. GitHub Pages deployments succeed.
+5. The direct status URL remains accessible.
+6. VRChat can still download and parse the file.
+7. The official component IDs and names have not changed.
+8. No personal account is exposed through repository activity.
 
 ## Disclaimer
 
